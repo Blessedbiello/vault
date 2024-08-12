@@ -1,5 +1,5 @@
-use anchor_lang::{prelude::*, system_program::{transfer, Transfer}};
-// use anchor_lang::{prelude::*, solana_program::entrypoint::ProgramResult, system_program::{transfer, Transfer}};
+// use anchor_lang::{prelude::*, system_program::{transfer, Transfer}};
+use anchor_lang::{prelude::*, solana_program::entrypoint::ProgramResult, system_program::{transfer, Transfer}};
 
 
 declare_id!("5Hi1dA4CXxNvHqMgPcfRpMfopmqRa3gDURCLnP2PHArj");
@@ -26,6 +26,7 @@ pub mod vault {
 
     pub fn close(ctx: Context<Close>) -> Result<()> {
         ctx.accounts.close()?;
+        Ok(())
     }
 }
 
@@ -132,6 +133,60 @@ impl<'info> Withdraw<'info> {
         let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
 
         transfer(cpi_ctx, amount)?;
+
+        Ok(())
+    }
+}
+
+
+#[derive(Accounts)]
+pub struct Close<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"vault", state.key().as_ref()],
+        bump = state.vault_bump,
+        // close = user
+    )]
+    pub vault: SystemAccount<'info>,
+    #[account(
+        mut,
+        seeds = [b"state", user.key().as_ref()],
+        bump = state.state_bump,
+        close = user
+    )]
+    pub state: Account<'info, VaultState>,
+    pub system_program: Program<'info, System>
+}
+
+impl<'info> Close<'info> {
+    pub fn close(&mut self) -> ProgramResult {
+
+        let cpi_program = self.system_program.to_account_info();
+
+        let balance = self.vault.get_lamports();
+
+        let cpi_accounts = Transfer {
+            from: self.vault.to_account_info(),
+            to: self.user.to_account_info()
+        };
+
+        let seeds = &[
+            b"vault",
+            self.state.to_account_info().key.as_ref(),
+            &[self.state.vault_bump]
+        ];
+
+        let signer_seeds = &[&seeds[..]];
+
+        let cpi_ctx = CpiContext::new_with_signer(
+            cpi_program,
+            cpi_accounts,
+            signer_seeds
+        );
+
+        transfer(cpi_ctx, balance)?;
 
         Ok(())
     }
